@@ -1,0 +1,30 @@
+# DigitalOcean App Platform spec for the cost-aware scheduler planning service.
+#
+# Deploy with the DigitalOcean CLI (doctl), authenticated to YOUR account:
+#     doctl apps create --spec backend/scheduler/deploy/do-app.yaml
+# or paste it in the DO control panel: Apps -> Create -> "Import from spec".
+#
+# This hosts the planning API only. It computes placement plans; it does not
+# run hashcat and does not launch GPU instances. Keep it behind auth if exposed.
+name: hashcat-reactor-scheduler
+region: nyc
+services:
+  - name: scheduler
+    # Point this at your own fork/branch once merged to your default branch.
+    github:
+      repo: greeneggshamrun-cpu/Hashcat-Reactor
+      branch: main
+      deploy_on_push: false
+    source_dir: backend/scheduler
+    dockerfile_path: backend/scheduler/Dockerfile
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    instance_count: 1
+    http_port: 8080
+    health_check:
+      http_path: /health
+    envs:
+      - key: SCHED_USD_PER_KWH
+        scope: RUN_TIME
+        value: "0.18"
+    # Recommended: restrict access. App Platform is public by default, so put a
+    # reverse proxy / auth in front, or keep this app private to your network.

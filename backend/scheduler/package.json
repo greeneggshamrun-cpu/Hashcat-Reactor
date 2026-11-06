@@ -1,0 +1,17 @@
+{
+  "name": "hashcat-reactor-scheduler",
+  "version": "1.0.0",
+  "description": "Cost-aware compute scheduler (local CPU vs cloud GPU) for authorized cracking jobs. Computes plans only; no marketplace I/O, no cloud provisioning.",
+  "main": "server-standalone.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server-standalone.js",
+    "test": "node costModel.test.js",
+    "demo": "node demo.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
