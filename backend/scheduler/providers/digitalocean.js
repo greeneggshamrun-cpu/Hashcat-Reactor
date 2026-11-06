@@ -77,43 +77,102 @@ function generateRunScript(job, opts = {}) {
   const life = Math.max(5, Number(opts.maxLifetimeMinutes) || 120);
   const hashFile = opts.hashFileRemotePath || '/root/target.hash';
   const extra = opts.hashcatArgs || '';
-  // attackMode + mask/wordlist are described for the operator; the actual
-  // invocation is a template they complete with their own artifacts.
+  // CUDA bootstrap controls:
+  //   cudaReady:true        -> image already has driver+CUDA (DO AI/ML image); skip install.
+  //   hashcatFromSource:true -> build latest hashcat from source instead of apt.
+  const cudaReady = opts.cudaReady === true;
+  const fromSource = opts.hashcatFromSource === true;
+  const cudaVersion = opts.cudaVersion || '12-6';
+
   const lines = [
     '#!/bin/bash',
     'set -euo pipefail',
+    'export DEBIAN_FRONTEND=noninteractive',
     '# --- reactor-scheduler run script (review before use) ---',
     `# Job: ${sanitizeComment(job.name)}  | authorization basis: ${job.authorization.basis}`,
     '',
     '# Self-destruct safety net: power off and let the control plane reap it.',
     `shutdown -h +${life} "reactor-scheduler max lifetime reached" &`,
     '',
-    '# Install hashcat (operator may prefer a prebuilt CUDA image instead).',
-    'export DEBIAN_FRONTEND=noninteractive',
-    'apt-get update -y && apt-get install -y hashcat || true',
+    'log() { echo "reactor-scheduler: $*"; }',
+    'wait_apt() { while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do log "waiting for apt lock"; sleep 5; done; }',
     '',
-    '# GPU sanity check: a GPU droplet must expose a GPU to hashcat. If none is',
-    '# visible, abort rather than silently fall back to slow CPU cracking and',
-    '# burn money. Use a CUDA-ready image (e.g. a DigitalOcean AI/ML GPU image)',
-    '# if nvidia-smi is missing.',
-    'if ! command -v nvidia-smi >/dev/null 2>&1 || ! nvidia-smi >/dev/null 2>&1; then',
-    '  echo "reactor-scheduler: ERROR no usable GPU (nvidia-smi failed). Aborting to avoid CPU-only spend." >&2',
+    '# ---- CUDA / NVIDIA driver bootstrap -------------------------------------',
+    'have_cuda() { command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; }',
+  ];
+
+  if (cudaReady) {
+    lines.push(
+      'log "cudaReady=true: expecting preinstalled driver+CUDA (e.g. DigitalOcean AI/ML image)"'
+    );
+  } else {
+    lines.push(
+      'if have_cuda; then',
+      '  log "NVIDIA driver already present; skipping CUDA install"',
+      'else',
+      '  log "installing NVIDIA driver + CUDA for ubuntu2204 (fresh image)"',
+      '  wait_apt; apt-get update -y',
+      '  apt-get install -y build-essential wget gnupg',
+      '  tmp=$(mktemp -d)',
+      '  wget -qO "$tmp/cuda-keyring.deb" https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb',
+      '  dpkg -i "$tmp/cuda-keyring.deb"',
+      '  wait_apt; apt-get update -y',
+      '  # cuda-drivers = kernel driver + libcuda; cuda-toolkit brings nvrtc etc.',
+      `  wait_apt; apt-get install -y cuda-drivers cuda-toolkit-${cudaVersion} || apt-get install -y cuda-drivers cuda-toolkit`,
+      '  modprobe nvidia || true',
+      'fi'
+    );
+  }
+
+  lines.push(
+    '',
+    '# ---- hashcat ------------------------------------------------------------'
+  );
+  if (fromSource) {
+    lines.push(
+      'if ! command -v hashcat >/dev/null 2>&1; then',
+      '  log "building hashcat from source"',
+      '  wait_apt; apt-get install -y git build-essential',
+      '  git clone --depth 1 https://github.com/hashcat/hashcat /opt/hashcat',
+      '  make -C /opt/hashcat -j"$(nproc)" && make -C /opt/hashcat install',
+      'fi'
+    );
+  } else {
+    lines.push(
+      'if ! command -v hashcat >/dev/null 2>&1; then',
+      '  log "installing hashcat from apt"',
+      '  wait_apt; apt-get install -y hashcat',
+      'fi'
+    );
+  }
+
+  lines.push(
+    '',
+    '# ---- GPU sanity check (abort rather than silently CPU-crack) ------------',
+    '# A GPU droplet must expose a GPU to hashcat. If the driver did not come up',
+    '# (fresh images sometimes need a reboot), abort loudly to avoid paying GPU',
+    '# rates for CPU-only work. Use a CUDA-ready image to skip the install race.',
+    'if ! have_cuda; then',
+    '  nvidia-smi || true',
+    '  echo "reactor-scheduler: ERROR no usable GPU (nvidia-smi failed). Aborting to avoid CPU-only spend. If this is a fresh image, reboot once so the driver loads, or use the AI/ML image." >&2',
     '  exit 1',
     'fi',
     'if ! hashcat -I 2>/dev/null | grep -qiE "Backend Device|CUDA|OpenCL"; then',
     '  echo "reactor-scheduler: ERROR hashcat sees no backend device. Aborting." >&2',
     '  exit 1',
     'fi',
+    'log "GPU ready:"; nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true',
     '',
-    '# Run the authorized job. Fill in wordlist/mask + your hash file path.',
+    '# ---- run the authorized job --------------------------------------------',
+    '# Fill in your hash mode, wordlist/mask, and hash file path.',
     `#   target hash file expected at: ${hashFile}`,
     `# Example (dictionary): hashcat -m <mode> -a 0 ${hashFile} /root/wordlist.txt ${extra}`.trim(),
     '# Cracked results are written to the local potfile for YOU to retrieve:',
     '#   scp root@<droplet-ip>:~/.local/share/hashcat/hashcat.potfile .',
     '# This script does NOT upload results anywhere.',
     '',
-    'echo "reactor-scheduler: environment ready; run your authorized hashcat command above."',
-  ];
+    'log "environment ready; run your authorized hashcat command above."'
+  );
   return lines.join('\n');
 }
 

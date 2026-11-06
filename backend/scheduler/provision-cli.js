@@ -66,7 +66,13 @@ async function main() {
   const opts = {
     region: arg('--region'),
     size: arg('--size'),
+    image: arg('--image'),
     maxLifetimeMinutes: Number(arg('--max-life')) || undefined,
+    // CUDA bootstrap: --cuda-ready for a DO AI/ML image (skip install),
+    // --from-source to build hashcat from source, --cuda-version NN-N.
+    cudaReady: process.argv.includes('--cuda-ready'),
+    hashcatFromSource: process.argv.includes('--from-source'),
+    cudaVersion: arg('--cuda-version') === true ? undefined : arg('--cuda-version'),
     confirm,
   };
 

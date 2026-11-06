@@ -150,5 +150,33 @@ function makeFakeHttp(script = {}) {
     assert.ok(!/hashes\.com/i.test(s), 'no marketplace references in the run script');
   });
 
+  await test('fresh image path installs NVIDIA driver + CUDA from the official repo', () => {
+    const s = generateRunScript(goodJob, {}); // cudaReady defaults false
+    assert.ok(/cuda-keyring_1\.1-1_all\.deb/.test(s), 'uses the official CUDA keyring');
+    assert.ok(/ubuntu2204/.test(s));
+    assert.ok(/apt-get install -y cuda-drivers/.test(s));
+    assert.ok(/have_cuda/.test(s) && /Aborting/.test(s), 'still has the GPU abort guard');
+  });
+
+  await test('cudaReady:true skips the CUDA install but keeps the GPU guard', () => {
+    const s = generateRunScript(goodJob, { cudaReady: true });
+    assert.ok(!/cuda-keyring/.test(s), 'no driver install on a preinstalled image');
+    assert.ok(/preinstalled driver\+CUDA/.test(s));
+    assert.ok(/have_cuda/.test(s) && /Aborting/.test(s), 'guard remains');
+  });
+
+  await test('hashcatFromSource builds hashcat from git; default uses apt', () => {
+    const src = generateRunScript(goodJob, { hashcatFromSource: true });
+    assert.ok(/git clone .*hashcat\/hashcat/.test(src));
+    const apt = generateRunScript(goodJob, {});
+    assert.ok(/apt-get install -y hashcat/.test(apt));
+    assert.ok(!/git clone/.test(apt));
+  });
+
+  await test('cudaVersion option flows into the toolkit package', () => {
+    const s = generateRunScript(goodJob, { cudaVersion: '12-4' });
+    assert.ok(/cuda-toolkit-12-4/.test(s));
+  });
+
   console.log(`\n${passed} checks passed.`);
 })();

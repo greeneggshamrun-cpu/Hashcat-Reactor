@@ -149,6 +149,32 @@ node backend/scheduler/provision-cli.js --destroy-all --confirm  # sweep
 `job.json` must carry the authorization attestation. Set your real GPU `--size`
 slug and prices before trusting any plan.
 
+### CUDA-ready cloud-init
+
+The generated run script boots the GPU stack two ways:
+
+- **Fresh Ubuntu 22.04 image (default):** installs the NVIDIA driver + CUDA from
+  the official `ubuntu2204` repo (`cuda-keyring` → `cuda-drivers` +
+  `cuda-toolkit-<ver>`), then hashcat. A fresh driver install can need one
+  reboot before `nvidia-smi` works — if so the GPU guard aborts loudly rather
+  than CPU-crack; reboot once and re-run, or use the AI/ML image.
+- **DigitalOcean AI/ML image (`--cuda-ready`):** the driver + CUDA are already
+  present, so the install is skipped and boot is fast. Confirm the current image
+  slug in your account (`doctl compute image list --public | grep -i ml`) and
+  pass it with `--image <slug>`.
+
+Flags: `--cuda-ready` (skip install), `--from-source` (build latest hashcat
+instead of apt), `--cuda-version 12-4` (toolkit version), `--image <slug>`.
+Either way the script verifies hashcat sees a CUDA/OpenCL backend before running
+and never uploads results.
+
+```bash
+# fresh image, build newest hashcat:
+node backend/scheduler/provision-cli.js --job job.json --size <gpu-slug> --from-source
+# DO AI/ML image, drivers preinstalled:
+node backend/scheduler/provision-cli.js --job job.json --size <gpu-slug> --image <ml-image-slug> --cuda-ready --confirm
+```
+
 ## Run it
 
 ```bash
