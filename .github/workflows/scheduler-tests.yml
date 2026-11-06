@@ -1,0 +1,35 @@
+name: Scheduler tests
+
+# Runs the cost-aware scheduler's dependency-free test suites on every push/PR
+# that touches the scheduler module.
+on:
+  push:
+    paths:
+      - 'backend/scheduler/**'
+      - '.github/workflows/scheduler-tests.yml'
+  pull_request:
+    paths:
+      - 'backend/scheduler/**'
+      - '.github/workflows/scheduler-tests.yml'
+
+jobs:
+  test:
+    name: Unit tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18', '20']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Core cost-model + scheduler tests
+        run: node backend/scheduler/costModel.test.js
+      - name: DigitalOcean provisioner tests (mocked, no network)
+        run: node backend/scheduler/providers/digitalocean.test.js
+      - name: Install service deps (express) for smoke test
+        run: npm install --omit=dev --no-audit --no-fund --prefix backend/scheduler
+      - name: Standalone service + auth smoke test
+        run: node backend/scheduler/server.smoke.test.js

@@ -97,6 +97,19 @@ curl -X POST localhost:3000/api/scheduler/jobs -H 'content-type: application/jso
 
 `basis` must be one of `own-data`, `scoped-engagement`, `research`, `ctf`.
 
+## Authentication
+
+The planning API is unauthenticated by default (fine for localhost). When you
+host it, set `SCHEDULER_API_KEY`; every `/api/*` request must then send
+`Authorization: Bearer <key>` (or `X-Api-Key: <key>`). `/health` stays open.
+Keys are compared in constant time. The service logs a warning at startup if no
+key is set.
+
+```bash
+SCHEDULER_API_KEY=$(openssl rand -hex 32) node backend/scheduler/server-standalone.js
+curl -H "Authorization: Bearer $SCHEDULER_API_KEY" localhost:8080/api/scheduler/providers
+```
+
 ## DigitalOcean GPU provisioning (optional, guarded)
 
 `providers/digitalocean.js` can launch a GPU droplet to run a job, then tear it

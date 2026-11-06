@@ -26,5 +26,10 @@ services:
       - key: SCHED_USD_PER_KWH
         scope: RUN_TIME
         value: "0.18"
-    # Recommended: restrict access. App Platform is public by default, so put a
-    # reverse proxy / auth in front, or keep this app private to your network.
+      # REQUIRED when exposed: App Platform apps are public. With this set, every
+      # /api/* request must send Authorization: Bearer <key> (or X-Api-Key).
+      # Set it as an ENCRYPTED secret in the DO control panel, not in plaintext.
+      - key: SCHEDULER_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: "CHANGE_ME_set_an_encrypted_secret_in_DO"
