@@ -97,9 +97,50 @@ curl -X POST localhost:3000/api/scheduler/jobs -H 'content-type: application/jso
 
 `basis` must be one of `own-data`, `scoped-engagement`, `research`, `ctf`.
 
+## DigitalOcean GPU provisioning (optional, guarded)
+
+`providers/digitalocean.js` can launch a GPU droplet to run a job, then tear it
+down. This is the only part that spends money, so it is locked down:
+
+- **Dry-run by default.** Nothing launches unless you pass `confirm: true` **and**
+  a token is present. A dry run returns the droplet spec + a review-me run
+  script and makes no API call.
+- **Authorization re-checked at launch.** The job's attestation is validated
+  again right before spend; no attestation ⇒ no droplet.
+- **Token from the environment only** (`DO_API_TOKEN`) — never from a request
+  body or CLI argument, never logged.
+- **Spend containment.** Every droplet is tagged `reactor-scheduler`, the
+  cloud-init includes a `shutdown` self-destruct after `maxLifetimeMinutes`, and
+  `--destroy-all` sweeps leftovers.
+- **No result exfiltration.** The run script writes the potfile on the droplet
+  for you to `scp` back; nothing is uploaded to any marketplace/escrow/callback.
+
+The HTTP API can only produce the **dry-run plan** (`POST
+/jobs/:id/provision-plan`) — it forces `confirm:false` no matter what the client
+sends, so the public surface can never launch a droplet. Real provisioning is
+CLI-only:
+
+```bash
+# dry run (prints droplet spec + run script, no spend):
+node backend/scheduler/provision-cli.js --job job.json --size gpu-h100x1-80gb
+
+# actually launch (needs BOTH, together):
+export DO_API_TOKEN=***            # your token, in the shell env only
+node backend/scheduler/provision-cli.js --job job.json --size gpu-h100x1-80gb --confirm
+
+node backend/scheduler/provision-cli.js --list                  # managed droplets
+node backend/scheduler/provision-cli.js --destroy <id> --confirm
+node backend/scheduler/provision-cli.js --destroy-all --confirm  # sweep
+```
+
+`job.json` must carry the authorization attestation. Set your real GPU `--size`
+slug and prices before trusting any plan.
+
 ## Run it
 
 ```bash
-node backend/scheduler/costModel.test.js   # unit tests (18 checks)
-node backend/scheduler/demo.js             # worked example, no deps
+node backend/scheduler/costModel.test.js             # core unit tests (18)
+node backend/scheduler/providers/digitalocean.test.js # provisioner tests (10)
+node backend/scheduler/demo.js                       # worked example, no deps
+node backend/scheduler/server-standalone.js          # start the planning API
 ```

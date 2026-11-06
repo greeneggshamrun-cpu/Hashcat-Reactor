@@ -72,6 +72,30 @@ module.exports = function createSchedulerRouter(opts = {}) {
     res.json({ estimatedSpendUsd: scheduler.estimatedSpendUsd() });
   });
 
+  // Dry-run-ONLY provisioning plan for a queued job. This endpoint never spends
+  // money and never calls DigitalOcean: it returns the droplet spec + the
+  // review-me run script. Actually launching a droplet is deliberately kept out
+  // of the HTTP surface — use the CLI (provision-cli.js) with DO_API_TOKEN set
+  // and an explicit --confirm, so spend always requires a shell + a human.
+  router.post('/jobs/:id/provision-plan', async (req, res) => {
+    const job = scheduler.getJob(req.params.id);
+    if (!job) return res.status(404).json({ message: 'Job not found' });
+    try {
+      const { runAuthorizedJob } = require('./providers/digitalocean');
+      const planOpts = {
+        region: req.body && req.body.region,
+        size: req.body && req.body.size,
+        maxLifetimeMinutes: req.body && req.body.maxLifetimeMinutes,
+        // confirm is forced false here regardless of what the client sends.
+        confirm: false,
+      };
+      const result = await runAuthorizedJob(job, planOpts);
+      res.json(result);
+    } catch (e) {
+      res.status(400).json({ message: 'Cannot plan provisioning', error: e.message });
+    }
+  });
+
   // Expose the instance for tests / programmatic use.
   router._scheduler = scheduler;
   return router;
