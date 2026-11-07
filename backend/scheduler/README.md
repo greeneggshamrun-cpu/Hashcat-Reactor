@@ -110,6 +110,54 @@ SCHEDULER_API_KEY=$(openssl rand -hex 32) node backend/scheduler/server-standalo
 curl -H "Authorization: Bearer $SCHEDULER_API_KEY" localhost:8080/api/scheduler/providers
 ```
 
+## AWS GPU provisioning — the cost-effective way
+
+`providers/aws.js` launches an EC2 GPU instance for one authorized job, with the
+cheap defaults chosen for you:
+
+- **Spot instances** (default) — usually 60–90% cheaper than on-demand. Spot can
+  be reclaimed by AWS mid-run; hashcat's `--restore` resumes from its checkpoint.
+  Use `--on-demand` if you can't tolerate interruption.
+- **Cheap GPU type** — default `g4dn.xlarge` (1× NVIDIA T4), the low end that's
+  plenty for most hash modes. Step up with `--instance-type g5.xlarge` (A10G) or
+  `g6.xlarge` (L4) when you need more.
+- **Deep Learning Base GPU AMI** — driver + CUDA preinstalled, so no install race
+  and no software cost. The AMI id is resolved per-region from AWS's public SSM
+  parameter ([AWS docs](https://docs.aws.amazon.com/dlami/latest/devguide/aws-deep-learning-x86-base-gpu-ami-ubuntu-24-04.html));
+  override with `--image ami-...` or `--ami-ssm-path`.
+- **Auto-terminate** — `InstanceInitiatedShutdownBehavior=terminate` plus the run
+  script's self-destruct timer, so an instance can't run up a bill unattended.
+
+### Connecting to AWS (credentials)
+
+The adapter shells out to the **`aws` CLI**, which handles request signing and
+the standard credential chain. Connect in the cheapest/safest way:
+
+1. Install the CLI and create an **IAM user or role** with least privilege — only
+   `ec2:RunInstances`, `ec2:*Instances` (describe/terminate), `ec2:CreateTags`,
+   and `ssm:GetParameters` for the AMI lookup.
+2. Authenticate the CLI (`aws configure`, SSO, or an instance role). Credentials
+   live in your AWS config/environment — **never pass keys to this tool or into
+   chat.**
+3. Set a default region (`AWS_REGION`) or pass `--region`. Spot prices vary by
+   region, so pick a cheap one for your AZ.
+
+```bash
+# dry run (prints the launch plan + run script, no spend):
+node backend/scheduler/provision-cli.js --provider aws --job job.json
+
+# launch a spot g4dn.xlarge on a Deep Learning AMI (needs aws creds + --confirm):
+node backend/scheduler/provision-cli.js --provider aws --job job.json \
+  --instance-type g4dn.xlarge --region us-east-1 --key-name mykey --confirm
+
+node backend/scheduler/provision-cli.js --provider aws --list
+node backend/scheduler/provision-cli.js --provider aws --destroy <id> --confirm
+node backend/scheduler/provision-cli.js --provider aws --destroy-all --confirm
+```
+
+Cheapest overall: short spot runs on `g4dn`, auto-terminated, in a low-price
+region — and always destroy leftovers with `--list` / `--destroy-all`.
+
 ## DigitalOcean GPU provisioning (optional, guarded)
 
 `providers/digitalocean.js` can launch a GPU droplet to run a job, then tear it

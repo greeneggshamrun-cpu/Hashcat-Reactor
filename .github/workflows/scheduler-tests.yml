@@ -29,6 +29,8 @@ jobs:
         run: node backend/scheduler/costModel.test.js
       - name: DigitalOcean provisioner tests (mocked, no network)
         run: node backend/scheduler/providers/digitalocean.test.js
+      - name: AWS provisioner tests (mocked, no AWS/network)
+        run: node backend/scheduler/providers/aws.test.js
       - name: Install service deps (express) for smoke test
         run: npm install --omit=dev --no-audit --no-fund --prefix backend/scheduler
       - name: Standalone service + auth smoke test
