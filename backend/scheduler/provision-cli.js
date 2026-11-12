@@ -32,6 +32,14 @@
  */
 
 const fs = require('fs');
+const path = require('path');
+
+// Default budget cap from providers.json (budget.maxJobUsd), overridable per run.
+let DEFAULT_MAX_USD = 25;
+try {
+  const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'providers.json'), 'utf-8'));
+  if (cfg.budget && cfg.budget.maxJobUsd !== undefined) DEFAULT_MAX_USD = cfg.budget.maxJobUsd;
+} catch (_) { /* keep default */ }
 
 function arg(flag, def) {
   const i = process.argv.indexOf(flag);
@@ -70,6 +78,9 @@ function loadProvider(name) {
           arg('--security-group-ids') && arg('--security-group-ids') !== true
             ? String(arg('--security-group-ids')).split(/[\s,]+/).filter(Boolean)
             : undefined,
+        // Worst-case budget bound when no --est-usd: hourly spot/on-demand price.
+        instanceUsdPerHour:
+          arg('--instance-hourly') && arg('--instance-hourly') !== true ? Number(arg('--instance-hourly')) : undefined,
       }),
     };
   }
@@ -88,6 +99,9 @@ function loadProvider(name) {
       region: arg('--region') === true ? undefined : arg('--region'),
       size: arg('--size') === true ? undefined : arg('--size'),
       image: arg('--image') === true ? undefined : arg('--image'),
+      // Worst-case budget bound when no --est-usd: droplet hourly price.
+      sizeUsdPerHour:
+        arg('--size-hourly') && arg('--size-hourly') !== true ? Number(arg('--size-hourly')) : undefined,
     }),
   };
 }
@@ -121,11 +135,20 @@ async function main() {
   if (!jobPath || jobPath === true) return bail('Provide --job <path-to-job.json>');
   const job = JSON.parse(fs.readFileSync(jobPath, 'utf-8'));
 
+  // Budget: --max-usd caps spend (default from providers.json; --no-budget disables).
+  // --est-usd provides a modeled cost to check against the cap.
+  const maxUsd = has('--no-budget')
+    ? null
+    : (arg('--max-usd') && arg('--max-usd') !== true ? Number(arg('--max-usd')) : DEFAULT_MAX_USD);
+  const estimatedUsd = arg('--est-usd') && arg('--est-usd') !== true ? Number(arg('--est-usd')) : undefined;
+
   const opts = {
     maxLifetimeMinutes: Number(arg('--max-life')) || undefined,
     cudaReady: has('--cuda-ready') ? true : undefined,
     hashcatFromSource: has('--from-source'),
     cudaVersion: arg('--cuda-version') === true ? undefined : arg('--cuda-version'),
+    maxUsd,
+    estimatedUsd,
     confirm,
     ...prov.extraOpts(),
   };

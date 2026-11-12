@@ -31,6 +31,8 @@
 const { execFile } = require('child_process');
 const { validateAuthorization } = require('../scheduler');
 const { generateRunScript } = require('./runScript');
+const { checkJobBudget } = require('../budget');
+const { appendAudit, authSnapshot } = require('../audit');
 
 const MANAGED_TAG = 'reactor-scheduler';
 // Verified against AWS docs: Deep Learning Base GPU AMI (driver+CUDA), Ubuntu
@@ -188,6 +190,14 @@ async function runAuthorizedJob(job, options = {}) {
 
   const provisioner = options.provisioner || new AwsProvisioner(options);
 
+  // Budget guard. Prefer a modeled estimate; else bound by worst case
+  // (hourly price x lifetime) when an hourly rate is supplied.
+  const maxUsd = options.maxUsd != null ? options.maxUsd : null;
+  const worstCaseUsd = options.instanceUsdPerHour != null
+    ? options.instanceUsdPerHour * (maxLifetimeMinutes / 60)
+    : null;
+  const budget = checkJobBudget({ estimatedUsd: options.estimatedUsd, worstCaseUsd, maxUsd });
+
   const plan = {
     provider: 'aws',
     action: 'run-instances',
@@ -197,16 +207,24 @@ async function runAuthorizedJob(job, options = {}) {
     region: provisioner.region || '(from AWS config/env)',
     maxLifetimeMinutes,
     autoTerminate: 'InstanceInitiatedShutdownBehavior=terminate + run-script self-destruct',
+    budget: { maxUsd, estimatedUsd: options.estimatedUsd != null ? options.estimatedUsd : null, worstCaseUsd, withinBudget: budget.ok, note: budget.ok ? undefined : budget.reason },
     runScript: userData,
     note: 'Dry run. Review the runScript, then re-call with { confirm: true } and configured AWS credentials to launch.',
     willSpend: true,
   };
 
+  const audit = (event, extra) => appendAudit({ event, provider: 'aws', jobId: job.id, name: job.name, authorization: authSnapshot(job), maxUsd, estimatedUsd: options.estimatedUsd != null ? options.estimatedUsd : worstCaseUsd, instanceType, spot, ...extra }, options.auditOpts);
+
   if (!options.confirm) {
+    audit('provision.dryrun', { region: provisioner.region || null });
     return { dryRun: true, plan };
   }
   if (!(await provisioner.hasCredentials())) {
     throw new Error('confirm:true but AWS credentials are not resolvable (configure the aws CLI); refusing to provision');
+  }
+  if (!budget.ok) {
+    audit('provision.refused', { reason: budget.reason });
+    throw new Error('Budget cap: ' + budget.reason);
   }
 
   const imageId = options.imageId || (await provisioner.resolveImage(options.amiSsmPath));
@@ -221,6 +239,7 @@ async function runAuthorizedJob(job, options = {}) {
     securityGroupIds: options.securityGroupIds,
     subnetId: options.subnetId,
   });
+  audit('provision.launched', { instanceId: instance && instance.id, imageId });
 
   return {
     dryRun: false,

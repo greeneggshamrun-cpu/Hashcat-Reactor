@@ -5,6 +5,8 @@ const {
   resolvePlacements,
   evaluatePlacements,
 } = require('./costModel');
+const { checkJobBudget, checkPlanBudget } = require('./budget');
+const { appendAudit, authSnapshot } = require('./audit');
 
 /**
  * Cost-aware scheduler for YOUR OWN authorized cracking jobs.
@@ -63,6 +65,11 @@ class Scheduler {
     this.usdPerKwh = opts.usdPerKwh != null
       ? opts.usdPerKwh
       : (providers.electricity && providers.electricity.usdPerKwh) || 0.18;
+    const budget = providers.budget || {};
+    // null in config/opts means "disable that cap"; undefined means "use default".
+    this.maxJobUsd = opts.maxJobUsd !== undefined ? opts.maxJobUsd : (budget.maxJobUsd !== undefined ? budget.maxJobUsd : 25);
+    this.maxPlanUsd = opts.maxPlanUsd !== undefined ? opts.maxPlanUsd : (budget.maxPlanUsd !== undefined ? budget.maxPlanUsd : 100);
+    this.auditOpts = opts.auditOpts || {}; // { logPath } override for tests
     /** @type {Map<string, object>} */
     this.jobs = new Map();
   }
@@ -114,6 +121,13 @@ class Scheduler {
       plan: null,
     };
     this.jobs.set(job.id, job);
+    appendAudit({
+      event: 'job.added',
+      jobId: job.id,
+      name: job.name,
+      keyspace: job.keyspace,
+      authorization: authSnapshot(job),
+    }, this.auditOpts);
     return { ok: true, job };
   }
 
@@ -204,24 +218,55 @@ class Scheduler {
     });
 
     scored.sort((a, b) => b.score - a.score);
-    return scored.map((x, i) => ({
-      rank: i + 1,
-      jobId: x.job.id,
-      name: x.job.name,
-      score: round(x.score, 4),
-      chosenPlacement: x.job.plan.chosen
-        ? {
-            id: x.job.plan.chosen.placementId,
-            label: x.job.plan.chosen.label,
-            location: x.job.plan.chosen.location,
-            etaSeconds: round(x.job.plan.chosen.etaSeconds, 1),
-            usd: round(x.job.plan.chosen.usd, 4),
-            meetsDeadline: x.job.plan.chosen.meetsDeadline,
-          }
-        : null,
-      deadlineFeasible: x.job.plan.deadlineFeasible,
-      authorization: { basis: x.job.authorization.basis },
-    }));
+    return scored.map((x, i) => {
+      const chosen = x.job.plan.chosen;
+      const usd = chosen ? chosen.usd : null;
+      const jobBudget = checkJobBudget({ estimatedUsd: usd, maxUsd: this.maxJobUsd });
+      x.job.plan.overBudget = !jobBudget.ok;
+      return {
+        rank: i + 1,
+        jobId: x.job.id,
+        name: x.job.name,
+        score: round(x.score, 4),
+        chosenPlacement: chosen
+          ? {
+              id: chosen.placementId,
+              label: chosen.label,
+              location: chosen.location,
+              etaSeconds: round(chosen.etaSeconds, 1),
+              usd: round(chosen.usd, 4),
+              meetsDeadline: chosen.meetsDeadline,
+            }
+          : null,
+        deadlineFeasible: x.job.plan.deadlineFeasible,
+        // Over-budget jobs are shown but flagged and NOT recommended to run.
+        overBudget: !jobBudget.ok,
+        budgetNote: jobBudget.ok ? undefined : jobBudget.reason,
+        authorization: { basis: x.job.authorization.basis },
+      };
+    });
+  }
+
+  /**
+   * Plan plus an aggregate budget verdict. Convenience wrapper over plan() that
+   * also reports whether the total breaches maxPlanUsd and which jobs are over
+   * the per-job cap.
+   */
+  planWithBudget(nowMs = Date.now()) {
+    const plan = this.plan(nowMs);
+    const totalUsd = this.estimatedSpendUsd(nowMs);
+    const planBudget = checkPlanBudget({ totalUsd, maxPlanUsd: this.maxPlanUsd });
+    return {
+      plan,
+      estimatedSpendUsd: totalUsd,
+      budget: {
+        maxJobUsd: this.maxJobUsd,
+        maxPlanUsd: this.maxPlanUsd,
+        planWithinBudget: planBudget.ok,
+        overBudgetJobs: plan.filter((p) => p.overBudget).map((p) => p.jobId),
+        note: planBudget.ok ? undefined : planBudget.reason,
+      },
+    };
   }
 
   /** Total estimated spend for the current plan's chosen placements. */

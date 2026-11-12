@@ -67,6 +67,15 @@ function defaultHttpRequest({ method, url, token, body }) {
 
 // The CUDA-ready cloud-init / run-script generator is shared across providers.
 const { generateRunScript } = require('./runScript');
+const { checkJobBudget } = require('../budget');
+const { appendAudit, authSnapshot } = require('../audit');
+
+// Worst-case upper bound on spend for one droplet: hourly price x max lifetime.
+// Lets a budget cap be enforced even without a modeled keyspace estimate.
+function worstCaseDropletUsd(sizeUsdPerHour, maxLifetimeMinutes) {
+  if (sizeUsdPerHour == null || !isFinite(sizeUsdPerHour)) return null;
+  return sizeUsdPerHour * (maxLifetimeMinutes / 60);
+}
 
 class DigitalOceanProvisioner {
   /**
@@ -180,24 +189,40 @@ async function runAuthorizedJob(job, options = {}) {
 
   const provisioner = options.provisioner || new DigitalOceanProvisioner(options);
 
+  // (5) Budget guard. Prefer a modeled estimate; otherwise bound by worst case
+  // (hourly price x lifetime) when the hourly rate is known.
+  const maxUsd = options.maxUsd != null ? options.maxUsd : null;
+  const worstCaseUsd = worstCaseDropletUsd(options.sizeUsdPerHour, maxLifetimeMinutes);
+  const budget = checkJobBudget({ estimatedUsd: options.estimatedUsd, worstCaseUsd, maxUsd });
+
   const plan = {
     action: 'create-droplet',
     dropletSpec: { ...dropletSpec, userData: '<cloud-init script, see runScript>' },
     runScript: userData,
     maxLifetimeMinutes,
+    budget: { maxUsd, estimatedUsd: options.estimatedUsd != null ? options.estimatedUsd : null, worstCaseUsd, withinBudget: budget.ok, note: budget.ok ? undefined : budget.reason },
     note: 'Dry run. Review the runScript, then re-call with { confirm: true } and DO_API_TOKEN set to actually provision.',
     willSpend: true,
   };
 
+  const audit = (event, extra) => appendAudit({ event, provider: 'digitalocean', jobId: job.id, name: job.name, authorization: authSnapshot(job), maxUsd, estimatedUsd: options.estimatedUsd != null ? options.estimatedUsd : worstCaseUsd, ...extra }, options.auditOpts);
+
   // (1) Dry-run gate: real action needs confirm:true AND a token.
   if (!options.confirm) {
+    audit('provision.dryrun', { region: dropletSpec.region, size: dropletSpec.size });
     return { dryRun: true, plan };
   }
   if (!provisioner.hasToken()) {
     throw new Error('confirm:true but DO_API_TOKEN not set; refusing to provision');
   }
+  // (5) Enforce the budget cap right before spend.
+  if (!budget.ok) {
+    audit('provision.refused', { reason: budget.reason });
+    throw new Error('Budget cap: ' + budget.reason);
+  }
 
   const droplet = await provisioner.createDroplet(dropletSpec);
+  audit('provision.launched', { region: dropletSpec.region, size: dropletSpec.size, dropletId: droplet && droplet.id });
   return {
     dryRun: false,
     plan,

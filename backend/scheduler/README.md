@@ -97,6 +97,44 @@ curl -X POST localhost:3000/api/scheduler/jobs -H 'content-type: application/jso
 
 `basis` must be one of `own-data`, `scoped-engagement`, `research`, `ctf`.
 
+## Budget caps (spend guard)
+
+Set in `providers.json` under `budget`:
+
+```json
+"budget": { "maxJobUsd": 25, "maxPlanUsd": 100 }
+```
+
+- **`maxJobUsd`** — the most a single launch may cost. A provisioning launch is
+  **refused** if the cost (a modeled `--est-usd`, or a worst-case
+  `hourly × max-lifetime`) exceeds it. Fail-safe: if a cap is set but no cost
+  figure is available, the launch is refused rather than allowed through blind.
+- **`maxPlanUsd`** — the most the whole queued plan may cost; `planWithBudget()`
+  and `POST /plan` flag over-budget jobs and report the aggregate verdict.
+
+Set a key to `null` to disable that cap. CLI: `--max-usd <n>` overrides,
+`--no-budget` disables, `--est-usd <n>` supplies a modeled cost, and
+`--size-hourly` / `--instance-hourly` supply an hourly price for the worst-case
+bound.
+
+```bash
+# refused: $0.44/hr x 2h = $0.88 is fine, but a $200 cap breach would stop here
+node backend/scheduler/provision-cli.js --provider aws --job job.json \
+  --instance-hourly 0.52 --max-life 120 --max-usd 5 --confirm
+```
+
+## Audit log
+
+Every authorization, dry run, launch, refusal, and teardown is appended to an
+append-only JSONL audit trail — the record that makes the "authorized jobs only"
+model accountable. Each entry has a timestamp, the job id/name, the
+authorization snapshot (`basis`, `justification`, `reference`), the provider and
+placement, and the cost figures. Secrets are never written (and secret-looking
+keys are redacted defensively).
+
+- Location: `SCHEDULER_AUDIT_LOG`, else `backend/uploads/scheduler-audit.jsonl`.
+- Read it back: `GET /api/scheduler/audit?limit=200`, or `readAudit()`.
+
 ## Authentication
 
 The planning API is unauthenticated by default (fine for localhost). When you

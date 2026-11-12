@@ -61,11 +61,19 @@ module.exports = function createSchedulerRouter(opts = {}) {
 
   router.post('/plan', (_req, res) => {
     try {
-      const plan = scheduler.plan();
-      res.json({ plan, estimatedSpendUsd: scheduler.estimatedSpendUsd() });
+      // Budget-aware plan: flags over-budget jobs and reports the aggregate verdict.
+      res.json(scheduler.planWithBudget());
     } catch (e) {
       res.status(500).json({ message: 'Planning failed', error: e.message });
     }
+  });
+
+  // Read-only audit trail of authorizations, plans, launches and teardowns.
+  router.get('/audit', (req, res) => {
+    const { readAudit } = require('./audit');
+    const entries = readAudit();
+    const limit = Math.min(Number(req.query.limit) || 200, 1000);
+    res.json(entries.slice(-limit));
   });
 
   router.get('/estimate-spend', (_req, res) => {

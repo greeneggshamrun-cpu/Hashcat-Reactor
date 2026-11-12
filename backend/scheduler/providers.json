@@ -6,6 +6,12 @@
     "_comment": "Marginal cost of running your local hardware. Used to price local CPU/GPU placements."
   },
 
+  "budget": {
+    "maxJobUsd": 25,
+    "maxPlanUsd": 100,
+    "_comment": "Hard spend ceilings. A job whose estimated cost exceeds maxJobUsd is flagged and refused at launch; a plan whose total exceeds maxPlanUsd is flagged. Raise/lower to taste; set a key to null to disable that cap."
+  },
+
   "localDevices": [
     {
       "id": "local-cpu",
