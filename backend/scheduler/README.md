@@ -135,6 +135,53 @@ keys are redacted defensively).
 - Location: `SCHEDULER_AUDIT_LOG`, else `backend/uploads/scheduler-audit.jsonl`.
 - Read it back: `GET /api/scheduler/audit?limit=200`, or `readAudit()`.
 
+## Execution runner (plan → provision → teardown)
+
+`runner.js` closes the loop: it picks the top in-budget, feasible job from the
+queue, provisions it through the guarded provider, marks it running, and can
+watch until the instance is gone, then mark it done. It automates the *machine
+lifecycle only* — it never transfers your hashes or fires hashcat for you; the
+actual command stays in the reviewed run script, so a human stays in the loop on
+the attack. Dry-run by default; real spend needs `--confirm` + credentials and
+inherits the authorization re-check, budget cap, and audit trail.
+
+```bash
+node backend/scheduler/run-cli.js --provider aws               # dry preview of the next job
+node backend/scheduler/run-cli.js --provider aws --confirm --watch
+```
+
+`GET /api/scheduler/next` previews the next job (read-only; the HTTP surface
+never provisions).
+
+## Persistence
+
+The queue persists to `SCHEDULER_STORE` (default
+`backend/uploads/scheduler-jobs.json`, gitignored) when the scheduler is created
+with `{ persist: true }` — jobs survive a restart. Off by default for ephemeral
+/ test use. Writes are atomic (temp file + rename) and never contain secrets.
+
+## Benchmark-driven hash rates
+
+Plans are only as good as the H/s you feed in. `benchmark.js` runs
+`hashcat -b -m <mode> --machine-readable` and parses the real speed (summed
+across devices), and `toHashRates()` fans it across placements — so you populate
+`hashRates` from measurement instead of guessing.
+
+## Live pricing
+
+`pricing.js` fetches the current **AWS spot price** for an instance type
+(`awsSpotPrice('g4dn.xlarge', { region })`, via `aws ec2
+describe-spot-price-history`, cheapest AZ) so budget/worst-case math uses real
+numbers rather than the static placeholders. DigitalOcean GPU pricing is fixed
+per slug (`doSizePrice`).
+
+## Spot interruption & instance hardening
+
+Run scripts set `umask 077`, and spot launches include an IMDSv2
+interruption watcher that logs AWS's ~2-minute notice and nudges hashcat to
+checkpoint — paired with `--restore` guidance so a reclaimed spot run resumes
+instead of restarting.
+
 ## Authentication
 
 The planning API is unauthenticated by default (fine for localhost). When you

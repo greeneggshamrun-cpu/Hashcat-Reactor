@@ -186,7 +186,9 @@ async function runAuthorizedJob(job, options = {}) {
   // the driver install). Pass cudaReady:false if you deliberately use a bare
   // Ubuntu AMI that needs the driver installed.
   const cudaReady = options.cudaReady != null ? options.cudaReady : true;
-  const userData = generateRunScript(job, { maxLifetimeMinutes, cudaReady, ...options });
+  // Spot instances get the interruption watcher in the run script. Derived keys
+  // go AFTER the spread so an explicit `undefined` from a caller can't clobber them.
+  const userData = generateRunScript(job, { ...options, maxLifetimeMinutes, cudaReady, spotAware: spot });
 
   const provisioner = options.provisioner || new AwsProvisioner(options);
 

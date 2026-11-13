@@ -33,11 +33,13 @@ function generateRunScript(job, opts = {}) {
   const cudaReady = opts.cudaReady === true;
   const fromSource = opts.hashcatFromSource === true;
   const cudaVersion = opts.cudaVersion || '12-6';
+  const spotAware = opts.spotAware === true;
 
   const lines = [
     '#!/bin/bash',
     'set -euo pipefail',
     'export DEBIAN_FRONTEND=noninteractive',
+    'umask 077   # restrict perms on potfile / restore file / any artifacts',
     '# --- reactor-scheduler run script (review before use) ---',
     `# Job: ${sanitizeComment(job.name)}  | authorization basis: ${job.authorization.basis}`,
     '',
@@ -109,11 +111,36 @@ function generateRunScript(job, opts = {}) {
     '  exit 1',
     'fi',
     'log "GPU ready:"; nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true',
-    '',
+    ''
+  );
+
+  if (spotAware) {
+    lines.push(
+      '# ---- spot-interruption watcher -----------------------------------------',
+      '# On a spot instance AWS gives a ~2 min interruption notice via IMDSv2.',
+      '# hashcat checkpoints continuously (--restore), so a reclaim is resumable;',
+      '# this just logs the notice and nudges hashcat to flush its restore file.',
+      'spot_watch() {',
+      '  while true; do',
+      '    TOK=$(curl -sX PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)',
+      '    CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "X-aws-ec2-metadata-token: $TOK" http://169.254.169.254/latest/meta-data/spot/instance-action 2>/dev/null || echo 000)',
+      '    if [ "$CODE" = "200" ]; then log "SPOT INTERRUPTION notice received; hashcat --restore will resume on next launch"; pkill -INT hashcat || true; break; fi',
+      '    sleep 5',
+      '  done',
+      '}',
+      'spot_watch &',
+      ''
+    );
+  }
+
+  lines.push(
     '# ---- run the authorized job --------------------------------------------',
-    '# Fill in your hash mode, wordlist/mask, and hash file path.',
+    '# Fill in your hash mode, wordlist/mask, and hash file path. Run with',
+    '# --restore so an interrupted (or spot-reclaimed) run resumes instead of',
+    '# starting over:',
     `#   target hash file expected at: ${hashFile}`,
-    `# Example (dictionary): hashcat -m <mode> -a 0 ${hashFile} /root/wordlist.txt ${extra}`.trim(),
+    `# Example (dictionary): hashcat -m <mode> -a 0 --restore-file-path /root/reactor.restore ${hashFile} /root/wordlist.txt ${extra}`.trim(),
+    '# Resume after an interruption:  hashcat --restore --restore-file-path /root/reactor.restore',
     '# Cracked results are written to the local potfile for YOU to retrieve:',
     '#   scp <user>@<instance-ip>:~/.local/share/hashcat/hashcat.potfile .',
     '# This script does NOT upload results anywhere.',

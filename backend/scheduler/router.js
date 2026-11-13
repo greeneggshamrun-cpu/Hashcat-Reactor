@@ -68,6 +68,15 @@ module.exports = function createSchedulerRouter(opts = {}) {
     }
   });
 
+  // Read-only preview of the next job the runner would execute (no provisioning,
+  // no spend). Real execution is CLI-only (run-cli.js), like provisioning.
+  router.get('/next', (_req, res) => {
+    const { Runner } = require('./runner');
+    const r = new Runner({ scheduler });
+    const pick = r.nextEligible();
+    res.json(pick ? { jobId: pick.job.id, name: pick.job.name, placement: pick.row.chosenPlacement } : { next: null });
+  });
+
   // Read-only audit trail of authorizations, plans, launches and teardowns.
   router.get('/audit', (req, res) => {
     const { readAudit } = require('./audit');

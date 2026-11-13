@@ -175,7 +175,7 @@ async function runAuthorizedJob(job, options = {}) {
 
   const maxLifetimeMinutes = Number(options.maxLifetimeMinutes) || 120;
   const name = `reactor-${(job.id || 'job')}-${Date.now().toString(36)}`.slice(0, 60);
-  const userData = generateRunScript(job, { maxLifetimeMinutes, ...options });
+  const userData = generateRunScript(job, { ...options, maxLifetimeMinutes });
 
   const dropletSpec = {
     name,

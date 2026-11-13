@@ -35,6 +35,10 @@ jobs:
         run: node backend/scheduler/budget.test.js
       - name: Persistence + benchmark tests
         run: node backend/scheduler/store.test.js
+      - name: Execution runner tests
+        run: node backend/scheduler/runner.test.js
+      - name: Live pricing + run-script hardening tests
+        run: node backend/scheduler/pricing.test.js
       - name: Install service deps (express) for smoke test
         run: npm install --omit=dev --no-audit --no-fund --prefix backend/scheduler
       - name: Standalone service + auth smoke test
