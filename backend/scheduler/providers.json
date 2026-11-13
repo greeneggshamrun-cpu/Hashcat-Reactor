@@ -1,0 +1,67 @@
+{
+  "_comment": "Cost inputs for the cost-aware scheduler. Edit these to match YOUR real rig and YOUR real cloud quotes. All prices in USD. Nothing here talks to any marketplace; these are the compute options the scheduler weighs for your own authorized jobs.",
+
+  "electricity": {
+    "usdPerKwh": 0.18,
+    "_comment": "Marginal cost of running your local hardware. Used to price local CPU/GPU placements."
+  },
+
+  "budget": {
+    "maxJobUsd": 25,
+    "maxPlanUsd": 100,
+    "_comment": "Hard spend ceilings. A job whose estimated cost exceeds maxJobUsd is flagged and refused at launch; a plan whose total exceeds maxPlanUsd is flagged. Raise/lower to taste; set a key to null to disable that cap."
+  },
+
+  "localDevices": [
+    {
+      "id": "local-cpu",
+      "kind": "cpu",
+      "label": "Local CPU",
+      "powerWatts": 95,
+      "available": true,
+      "_comment": "Pure-CPU host. Slow for most hash modes; cost is only electricity, no cloud spend."
+    },
+    {
+      "id": "local-gpu",
+      "kind": "gpu",
+      "label": "Local GPU rig",
+      "powerWatts": 350,
+      "available": false,
+      "_comment": "Set available:true and tune powerWatts if the host has a crackable GPU. Zero $/hr beyond electricity."
+    }
+  ],
+
+  "cloudInstances": [
+    {
+      "id": "rtx4090-1x",
+      "label": "1x RTX 4090 (spot)",
+      "kind": "gpu",
+      "usdPerHour": 0.44,
+      "billingGranularitySeconds": 1,
+      "minBillableSeconds": 60,
+      "provisioningSeconds": 180,
+      "available": true,
+      "_comment": "Representative community-cloud spot price. Replace usdPerHour with your actual quote."
+    },
+    {
+      "id": "a100-80g-1x",
+      "label": "1x A100 80GB",
+      "kind": "gpu",
+      "usdPerHour": 1.6,
+      "billingGranularitySeconds": 1,
+      "minBillableSeconds": 60,
+      "provisioningSeconds": 240,
+      "available": true
+    },
+    {
+      "id": "h100-1x",
+      "label": "1x H100",
+      "kind": "gpu",
+      "usdPerHour": 2.9,
+      "billingGranularitySeconds": 1,
+      "minBillableSeconds": 60,
+      "provisioningSeconds": 300,
+      "available": true
+    }
+  ]
+}
