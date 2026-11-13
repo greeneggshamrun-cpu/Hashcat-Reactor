@@ -7,6 +7,7 @@ const {
 } = require('./costModel');
 const { checkJobBudget, checkPlanBudget } = require('./budget');
 const { appendAudit, authSnapshot } = require('./audit');
+const { loadJobs, saveJobs } = require('./store');
 
 /**
  * Cost-aware scheduler for YOUR OWN authorized cracking jobs.
@@ -70,8 +71,19 @@ class Scheduler {
     this.maxJobUsd = opts.maxJobUsd !== undefined ? opts.maxJobUsd : (budget.maxJobUsd !== undefined ? budget.maxJobUsd : 25);
     this.maxPlanUsd = opts.maxPlanUsd !== undefined ? opts.maxPlanUsd : (budget.maxPlanUsd !== undefined ? budget.maxPlanUsd : 100);
     this.auditOpts = opts.auditOpts || {}; // { logPath } override for tests
+    // Optional persistence: opts.persist true (or a storePath) loads any saved
+    // jobs now and writes after every mutation. Off by default (tests, ephemeral).
+    this.storeOpts = opts.storePath ? { storePath: opts.storePath } : {};
+    this.persist = Boolean(opts.persist || opts.storePath);
     /** @type {Map<string, object>} */
     this.jobs = new Map();
+    if (this.persist) {
+      for (const j of loadJobs(this.storeOpts)) this.jobs.set(j.id, j);
+    }
+  }
+
+  _save() {
+    if (this.persist) saveJobs([...this.jobs.values()], this.storeOpts);
   }
 
   /**
@@ -121,6 +133,7 @@ class Scheduler {
       plan: null,
     };
     this.jobs.set(job.id, job);
+    this._save();
     appendAudit({
       event: 'job.added',
       jobId: job.id,
@@ -138,6 +151,16 @@ class Scheduler {
     if (!j) return false;
     if (j.status === 'running' || j.status === 'done') return false;
     j.status = 'cancelled';
+    this._save();
+    return true;
+  }
+
+  /** Update a job's status (used by the execution runner) and persist. */
+  setStatus(id, status) {
+    const j = this.jobs.get(id);
+    if (!j) return false;
+    j.status = status;
+    this._save();
     return true;
   }
 

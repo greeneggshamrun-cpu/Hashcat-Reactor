@@ -28,3 +28,4 @@ dist-ssr
 
 # Scheduler runtime audit log (local; not source)
 backend/uploads/scheduler-audit.jsonl
+backend/uploads/scheduler-jobs.json
