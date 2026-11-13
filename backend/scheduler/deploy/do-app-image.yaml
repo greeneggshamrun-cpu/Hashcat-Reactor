@@ -1,0 +1,32 @@
+# DigitalOcean App Platform spec that runs the scheduler from a prebuilt image
+# in YOUR DigitalOcean Container Registry (DOCR) — the "export to container"
+# path. Build and push the image first with deploy/build-and-push.sh, then:
+#     doctl apps create --spec backend/scheduler/deploy/do-app-image.yaml
+#
+# (If you'd rather have App Platform build from source instead of DOCR, use
+#  deploy/do-app.yaml — it builds the Dockerfile straight from the repo.)
+name: hashcat-reactor-scheduler
+region: nyc
+services:
+  - name: scheduler
+    image:
+      registry_type: DOCR
+      # The DOCR repository holding the image build-and-push.sh pushed.
+      repository: reactor-scheduler
+      tag: latest
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    instance_count: 1
+    http_port: 8080
+    health_check:
+      http_path: /health
+    envs:
+      - key: SCHED_USD_PER_KWH
+        scope: RUN_TIME
+        value: "0.18"
+      # REQUIRED when exposed: App Platform apps are public. Set this as an
+      # ENCRYPTED secret in the DO control panel (or `doctl apps update`), not
+      # in plaintext here.
+      - key: SCHEDULER_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: "CHANGE_ME_set_an_encrypted_secret_in_DO"

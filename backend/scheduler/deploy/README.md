@@ -8,6 +8,24 @@ on yourself. There is no marketplace/escrow traffic.
 You deploy it to **your own** DigitalOcean account. These steps need your DO
 login/token, which stays with you — don't paste tokens into chat tools.
 
+## Option A0 — Container Registry (DOCR) + App Platform
+
+Export the service as a container image into your own DigitalOcean Container
+Registry, then run it on App Platform from that image. Run the script on your
+machine (needs a running Docker daemon and an authenticated `doctl`):
+
+```bash
+doctl registry create my-registry          # once, if you don't have one
+backend/scheduler/deploy/build-and-push.sh my-registry v1
+# -> builds + pushes registry.digitalocean.com/my-registry/reactor-scheduler:v1
+
+# edit deploy/do-app-image.yaml (repository/tag), then:
+doctl apps create --spec backend/scheduler/deploy/do-app-image.yaml
+```
+
+No secrets go into the image — set `SCHEDULER_API_KEY` as an **encrypted**
+app-level secret before exposing the app (App Platform apps are public).
+
 ## Option A — App Platform (managed, simplest)
 
 1. Install and authenticate the CLI:
