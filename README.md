@@ -7,6 +7,7 @@
 * **Real-time Dashboard**: Monitor hashrates, progress, and recovered hashes live via WebSockets.
 * **Remote Access**: Securely share your instance over the web via Zrok tunnels to control it remotely.
     * *Security*: Supports optional username/password protection.
+    * *Install as an app (PWA)*: Over an HTTPS tunnel (e.g. zrok) the UI is an installable Progressive Web App. In Chrome/Android use **⋮ → Install app / Add to Home screen** to run it fullscreen like a native app; the shell is cached for offline use, while live `/api` and websocket traffic always hit the network. Optimized for small phone displays (e.g. Moto G Play 2026).
 * **Hash Extractor**: Extracts crackable hashes directly from Archives (7-Zip, etc.), Documents, Wallets, and System files.
 * **Job Queue System**: Queue up multiple attacks (Wordlist, Mask, Hybrid, etc.) and let Reactor process them sequentially automatically.
 * **Smart Workflow**: A fully automated, multi-phase cracking pipeline that adapts to your results in real time.
