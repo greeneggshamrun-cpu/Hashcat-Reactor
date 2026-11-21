@@ -2,7 +2,19 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover handles the Moto G Play (2026) and other 20:9 phones;
+         scaling left enabled for accessibility. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#020617" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Reactor" />
+    <!-- Installable PWA ("Add to Home Screen" / Install app in Chrome) -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
     <title>Hashcat Reactor</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -29,9 +41,23 @@
       }
     </script>
     <style>
+      html {
+        /* Stop iOS/Android auto-inflating text and let JS viewport units behave. */
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+      }
       body {
         background-color: #020617;
         color: #e2e8f0;
+        /* App-like feel on a phone: no rubber-band / pull-to-refresh, respect notches. */
+        overscroll-behavior-y: contain;
+        -webkit-tap-highlight-color: transparent;
+      }
+      /* Honor the device safe areas (status bar / gesture pill) on the app shell. */
+      @supports (padding: max(0px)) {
+        .safe-top    { padding-top: max(0px, env(safe-area-inset-top)); }
+        .safe-bottom { padding-bottom: max(0px, env(safe-area-inset-bottom)); }
+        .safe-left   { padding-left: max(0px, env(safe-area-inset-left)); }
       }
       ::-webkit-scrollbar {
         width: 6px;
@@ -64,5 +90,18 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
+    <script>
+      // Register the service worker for installability + offline shell. Only in
+      // a secure context (https, or localhost) — e.g. over a zrok tunnel. Harmless
+      // no-op in the Electron desktop build (file://), which isn't a PWA host.
+      if ('serviceWorker' in navigator &&
+          (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('./sw.js').catch(function (err) {
+            console.warn('SW registration failed:', err);
+          });
+        });
+      }
+    </script>
   </body>
 </html>

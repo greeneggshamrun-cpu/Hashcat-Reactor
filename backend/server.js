@@ -2495,6 +2495,17 @@ app.get('/pebble-config', (req, res) => {
     res.status(404).send('Pebble config page not found. Build pebble-client first.');
 });
 
+// Cost-aware compute scheduler (local CPU vs cloud GPU) for the operator's own
+// authorized jobs. Self-contained under ./scheduler; see scheduler/README.md.
+// Deliberately NOT wired to any marketplace/escrow ingestion.
+try {
+    const createSchedulerRouter = require('./scheduler/router');
+    app.use('/api/scheduler', createSchedulerRouter());
+    console.log('[scheduler] cost-aware scheduler mounted at /api/scheduler');
+} catch (e) {
+    console.warn('[scheduler] failed to mount:', e.message);
+}
+
 app.get('*', (req, res) => {
     if (staticPath && fs.existsSync(path.join(staticPath, 'index.html'))) {
         res.sendFile(path.join(staticPath, 'index.html'));

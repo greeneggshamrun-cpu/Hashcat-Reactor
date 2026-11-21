@@ -260,7 +260,16 @@ const getSocketUrl = () => {
 
 function App() {
   const { t, i18n } = useTranslation(); 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'insights' | 'terminal' | 'escrow' | 'config' | 'queue' | 'remote' | 'file2john'>('dashboard');
+  type TabId = 'dashboard' | 'insights' | 'terminal' | 'escrow' | 'config' | 'queue' | 'remote' | 'file2john';
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    // Reopen on the last-used screen (handy on mobile, where tabs get reloaded).
+    try {
+      const saved = localStorage.getItem('reactor_active_tab') as TabId | null;
+      const valid: TabId[] = ['dashboard', 'insights', 'terminal', 'escrow', 'config', 'queue', 'remote', 'file2john'];
+      if (saved && valid.includes(saved)) return saved;
+    } catch { /* localStorage unavailable */ }
+    return 'dashboard';
+  });
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('hashes_apikey') || '');
   
   const isRemoteSession = useMemo(() => window.location.hostname.includes('zrok.io') || !window.process, []);
@@ -627,6 +636,9 @@ function App() {
   useEffect(() => { localStorage.setItem('hashes_apikey', apiKey); }, [apiKey]);
 
   useEffect(() => { localStorage.setItem('reactor_config', JSON.stringify(config)); }, [config]);
+
+  // Remember the current tab locally so a reload (common on mobile) returns here.
+  useEffect(() => { try { localStorage.setItem('reactor_active_tab', activeTab); } catch { /* ignore */ } }, [activeTab]);
 
   // --- QUEUE PROCESSOR EFFECT ---  
   useEffect(() => {
@@ -1509,9 +1521,9 @@ function App() {
       </aside>
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden ml-20 lg:ml-0 relative">
-        <header className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-950/80 backdrop-blur sticky top-0 z-40">
-          <div className="flex items-center gap-4"><div><h1 className="text-xs text-slate-400 font-bold uppercase">{t('active_target')}</h1><span className="text-slate-100 font-mono text-sm">{activeSessionId ? (session.target || t('target_na')) : t('target_configure')}</span></div></div>
-          <div className="flex items-center gap-3">
+        <header className="h-16 border-b border-slate-800 flex items-center justify-between px-3 sm:px-6 bg-slate-950/80 backdrop-blur sticky top-0 z-40">
+          <div className="flex items-center gap-4 min-w-0 flex-1 mr-2"><div className="min-w-0"><h1 className="text-xs text-slate-400 font-bold uppercase">{t('active_target')}</h1><span className="text-slate-100 font-mono text-sm truncate block">{activeSessionId ? (session.target || t('target_na')) : t('target_configure')}</span></div></div>
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
              {jobQueue.length > 0 && (<div className="flex items-center gap-2 px-3 py-1 bg-slate-900 border border-slate-800 rounded-lg text-xs font-bold text-slate-400"><List size={14} /><span>{t('Queue pending', { count: jobQueue.length })}</span>{isQueueProcessing && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>}</div>)}
 
             {/* Smart Workflow header indicator + dropdown */}
@@ -1572,7 +1584,7 @@ function App() {
                       </div>
 
                       {/* Phase grid */}
-                      <div className="p-3 grid grid-cols-4 gap-2">
+                      <div className="p-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {effectiveSwState.phases.map((phase) => {
                           const Icon = phaseIcons[phase.n - 1];
                           const isRunning = phase.status === 'running';
@@ -1632,7 +1644,7 @@ function App() {
 
                       {/* Live stats row */}
                       {!effectiveSwState.complete && swSession && (
-                        <div className="px-3 pb-3 grid grid-cols-4 gap-2 border-t border-slate-800 pt-2.5">
+                        <div className="px-3 pb-3 grid grid-cols-2 sm:grid-cols-4 gap-2 border-t border-slate-800 pt-2.5">
                           <div className="flex flex-col gap-0.5">
                             <span className="text-[9px] text-slate-600 uppercase font-bold">Hashrate</span>
                             <span className="text-[11px] font-mono text-indigo-300">{formatHashrate(swSession.hashrate || 0)}</span>
@@ -1725,7 +1737,7 @@ function App() {
                   <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                       <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[80vh]">
                           <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/50 shrink-0"><h3 className="font-bold text-slate-200 flex items-center gap-2"><CheckCircle size={18} className="text-emerald-400" />{t('modal_potfile_title')}</h3><button onClick={() => setShowPreCrackedModal(false)} className="text-slate-500 hover:text-white transition-colors"><X size={20} /></button></div>
-                          <div className="p-6 bg-slate-900 grid grid-cols-3 gap-4 shrink-0">
+                          <div className="p-4 sm:p-6 bg-slate-900 grid grid-cols-3 gap-4 shrink-0">
                               <div className="bg-slate-950 border border-slate-800 p-4 rounded-lg text-center"><div className="text-xs text-slate-500 uppercase font-bold">{t('modal_total')}</div><div className="text-xl font-mono text-white">{preCrackedResults.total}</div></div>
                               <div className="bg-slate-950 border border-slate-800 p-4 rounded-lg text-center"><div className="text-xs text-slate-500 uppercase font-bold">{t('modal_cracked')}</div><div className="text-xl font-mono text-emerald-400">{preCrackedResults.found}</div></div>
                               <div className="bg-slate-950 border border-slate-800 p-4 rounded-lg text-center"><div className="text-xs text-slate-500 uppercase font-bold">{t('modal_locked')}</div><div className="text-xl font-mono text-red-400">{preCrackedResults.total - preCrackedResults.found}</div></div>
